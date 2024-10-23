@@ -1,17 +1,17 @@
 #!/bin/bash
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# #  unraid.sh - Script used by HomeAssistant_inabox docker conatainer to install Home Assistant on an Unraid server        # # 
-# #  by SpaceInvaderOne                                                                                                     # # 
+# #  unraid.sh - Script used by HomeAssistant_inabox docker conatainer to install Home Assistant on an Unraid server        # #
+# #  by SpaceInvaderOne                                                                                                     # #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-#  Get url for HA qcow2 file. Download and extract it  # # # # # # # # # # # # # # 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#  Get url for HA qcow2 file. Download and extract it  # # # # # # # # # # # # # #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 get_vdisk() {
-   
+
 
     # make the temporary directory if not there
     mkdir -p "$TMP_DIR"
@@ -34,7 +34,7 @@ get_vdisk() {
         img_path="$DOMAIN/vdisk1.img"
         mkdir -p "$DOMAIN"
 
-        # Download the needed .qcow2.xz 
+        # Download the needed .qcow2.xz
         echo "downloading the Home Assistant vdisk from the official source "
         if ! curl -L "$download_url" -o "$download_path"; then
             echo "Error.. Failed to download the .qcow2.xz file from $download_url"
@@ -58,21 +58,21 @@ get_vdisk() {
         return 1
     fi
 
-    # clean up 
+    # clean up
     rm -f "$TMP_FILE"
 }
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-#  get the IP of the runing HA VM, Restart VM, redirect to VMs WebUI # # # # # # # 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#  get the IP of the runing HA VM, Restart VM, redirect to VMs WebUI # # # # # # #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 
 get_vm_ip() {
-    max_retries=5  
-    retry_delay=60  
-    last_vm_ip=""   
-    ip_collected=false  
-    ip_check_interval=3  
+    max_retries=5
+    retry_delay=60
+    last_vm_ip=""
+    ip_collected=false
+    ip_check_interval=3
 
     while true; do
         # check the current status of the VM
@@ -89,10 +89,11 @@ get_vm_ip() {
                 # wait until the guest agent is responsive before attempting to get the IP
                 guest_agent_connected=false
                 for attempt in {1..9}; do
-                    # see if the qemu guest agent is connected 
+                    # see if the qemu guest agent is connected
                     if virsh qemu-agent-command "$VMNAME" '{"execute":"guest-ping"}' &>/dev/null; then
                         echo "Guest agent is connected."
                         guest_agent_connected=true
+
                         break
                     else
                         echo "Guest agent is not responding. Waiting for 5 seconds before retrying... ($attempt/9)"
@@ -117,7 +118,7 @@ get_vm_ip() {
                         ip_collected=true  # set this flag iwhen ip is successfully got
 
                         # update Nginx with ip of the vm so docker webui can redirct to home assistant webui in the vm
-                        timestamp=$(date +%s)  
+                        timestamp=$(date +%s)
                         cat <<EOF > /etc/nginx/sites-available/default
 server {
     listen 8123;
@@ -158,6 +159,61 @@ EOF
                 fi
             else
                 echo "vm ip address has already been collected: $last_vm_ip"
+
+                curl_output=$(curl -s http://$last_vm_ip:8123)
+                # Check curl's output contains "Home Assistant"
+                if [[ -n "$last_vm_ip" && $curl_output != *"Home Assistant"* ]]; then
+                    tm=$(date '+%D %T')
+                    echo "${tm} Home Assistant Not Work(Curl)。"
+
+                    # is restart in docker template is set to "Yes" ?
+                    if [[ "$RESTART" == "Yes" ]]; then
+                        echo "Delay 5 min to recheck"
+
+                        sleep 300
+
+                        curl_output=$(curl -s http://$last_vm_ip:8123)
+
+                         if [[ $curl_output = *"Home Assistant"* ]]; then
+                            continue
+                         fi
+
+                        tm=$(date '+%D %T')
+                        echo "${tm} RESTART is set to 'Yes'. Attempting to restart the VM..."
+                        echo "${tm} Attempting to restart the VM..."
+
+                        retries=0
+                        while [[ "$retries" -lt "$max_retries" ]]; do
+                            echo "Attempting to start VM '$VMNAME' (Attempt $((retries + 1))/$max_retries)..."
+                            virsh reboot "$VMNAME"
+
+                            sleep 120
+
+                            # did vm start ?
+                            vm_status=$(virsh domstate "$VMNAME" 2>/dev/null | tr -d '\r\n')
+                            if [[ "$vm_status" == "running" ]]; then
+                                echo "VM '$VMNAME' started successfully."
+                                ip_collected=false  # rest the ip  flag
+
+                                break
+                            else
+                                echo "Failed to start VM '$VMNAME'. Retrying in $retry_delay seconds..."
+                                retries=$((retries + 1))
+                                sleep "$retry_delay"
+                            fi
+                        done
+
+                        # see if loop finished but couldnt start the ha vm
+                        if [[ "$retries" -eq "$max_retries" ]]; then
+                            echo "Failed to start VM '$VMNAME' after $max_retries attempts. Exiting..."
+                            exit 1
+                        fi
+                    fi
+
+                else
+                    tm=$(date '+%D %T')
+                    echo "${tm} Home Assistant Curl Check OK."
+                fi
             fi
         elif [[ "$vm_status" == "inactive" || "$vm_status" == "shut off" || "$vm_status" == "paused" ]]; then
             echo "VM '$VMNAME' is not running."
@@ -177,7 +233,6 @@ EOF
                         echo "VM '$VMNAME' started successfully."
                         ip_collected=false  # rest the ip  flag
 
-                    
                         break
                     else
                         echo "Failed to start VM '$VMNAME'. Retrying in $retry_delay seconds..."
@@ -207,9 +262,9 @@ EOF
     done
 }
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-#  get the host path for a given container path using Docker inspect # # # # # # # 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#  get the host path for a given container path using Docker inspect # # # # # # #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 
 function get_host_path {
@@ -231,9 +286,9 @@ function get_host_path {
     fi
 }
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# Function to see the highest available qemu types on server # # # # # # # # # # # 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Function to see the highest available qemu types on server # # # # # # # # # # #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 
 get_highest_machine_types() {
@@ -247,9 +302,9 @@ get_highest_machine_types() {
    #  echo "Highest i440fx machine type available: $highest_i440fx"
 }
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# Function to get the vm default vm network source # # # # # # # # # # # # # # # # 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Function to get the vm default vm network source # # # # # # # # # # # # # # # #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 get_vm_network() {
 
@@ -272,9 +327,9 @@ get_vm_network() {
     fi
 }
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# Auto install the vm [main funcrion]  # # # # # # # # # # # # # # # # # # # # # # 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Auto install the vm [main funcrion]  # # # # # # # # # # # # # # # # # # # # # #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 
 autoinstall() {
@@ -307,21 +362,21 @@ autoinstall() {
     definevm
 }
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# ADD THE VM TEMPLATE USED TO DEFINE THE VM    # # # # # # # # # # # # # # # # # # 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# ADD THE VM TEMPLATE USED TO DEFINE THE VM    # # # # # # # # # # # # # # # # # #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 
 addxml() {
 
     # preparation
-    
+
     cp "/config/HomeAssistant.xml" "/config/tmp.xml"
     XML="/config/tmp.xml"
     UUID=$(uuidgen)
     nvram_file="/etc/libvirt/qemu/nvram/${UUID}_VARS-pure-efi.fd"
     MAC=$(printf 'AC:87:A3:%02X:%02X:%02X\n' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))  # random mac address with apple prefix
-	
+
 
 # create custom xml from the standard template
 
@@ -360,9 +415,9 @@ qemu-img create -f raw "$nvram_file" 64k
 
 
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# Collect info and set variables # # # # # # # # # # # # # # # # # # # # # # # # # 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Collect info and set variables # # # # # # # # # # # # # # # # # # # # # # # # #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 collect_info() {
 # # get the real paths of bind mapped locations in homeassistantinabox
@@ -396,22 +451,22 @@ DOMAIN=/domains/"$VMNAME"
 }
 
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# WAIT FOR NEEDED FILES THEN DEFINE THE VM     # # # # # # # # # # # # # # # # # # 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# WAIT FOR NEEDED FILES THEN DEFINE THE VM     # # # # # # # # # # # # # # # # # #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 definevm() {
     # the the vm already installed?
     if virsh dominfo "$VMNAME" &> /dev/null; then
         echo "VM '$VMNAME' is already defined. Skipping definition step..."
 
-        # send a notification to the Unraid web GUI 
+        # send a notification to the Unraid web GUI
         chroot /host /usr/bin/php /usr/local/emhttp/webGui/scripts/notify \
             -e "HomeAssistantinabox" \
             -s "$VMNAME" \
             -d "VM '$VMNAME' is already defined and ready to run." \
             -i "normal"
-        return 0  
+        return 0
     fi
 
     # Check supporting files are present before defining
@@ -422,11 +477,11 @@ definevm() {
     if [[ -f "$xml_file" && -f "$qcow2_img" ]]; then
         echo "All required files are present. Attempting to define the VM..."
 
-        # define home assistant vm 
+        # define home assistant vm
         if virsh define "$xml_file"; then
-            rm "$xml_file"  # remove the temporary xml file 
+            rm "$xml_file"  # remove the temporary xml file
 
-            # send a notification to the Unraid web GUI 
+            # send a notification to the Unraid web GUI
             chroot /host /usr/bin/php /usr/local/emhttp/webGui/scripts/notify \
                 -e "HomeAssistantinabox" \
                 -s "$VMNAME" \
@@ -435,7 +490,7 @@ definevm() {
         else
             echo "Failed to define the VM. There was an error during the VM definition process."
 
-            # send a notification to the Unraid web GUI 
+            # send a notification to the Unraid web GUI
             chroot /host /usr/bin/php /usr/local/emhttp/webGui/scripts/notify \
                 -e "HomeAssistantinabox" \
                 -s "$VMNAME" \
@@ -452,7 +507,7 @@ definevm() {
         [[ ! -f "$xml_file" ]] && echo "  - $xml_file"
         [[ ! -f "$qcow2_img" ]] && echo "  - $qcow2_img"
 
-        # send a notification to the Unraid web GUI 
+        # send a notification to the Unraid web GUI
         chroot /host /usr/bin/php /usr/local/emhttp/webGui/scripts/notify \
             -e "HomeAssistantinabox" \
             -s "$VMNAME" \
@@ -490,7 +545,7 @@ check_version() {
                 -s "The Template for HomeAssistant_inabox needs updating" \
                 -d "View the container logs to show you how" \
                 -i "warning" \
-               
+
 
         sleep 20
         exit 0 # Exiting the whole script
@@ -505,8 +560,8 @@ icon() {
     # does default icon exist?
     if [ ! -f "$ICON_DESTINATION" ]; then
         echo "Putting default ha vm icon in place"
-        
-        # copy the icon 
+
+        # copy the icon
         cp "$ICON_SOURCE" "$ICON_DESTINATION"
 
         # check if the copy was successful
@@ -517,11 +572,11 @@ icon() {
         fi
     else
         echo "Icon already there skipping....."
-    fi  
-}  
+    fi
+}
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 check_version
 collect_info
 icon

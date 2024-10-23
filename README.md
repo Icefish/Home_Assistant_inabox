@@ -32,34 +32,34 @@ HomeAssistant_inabox relies on a few essential variables that need to be set thr
 
 ### Container Variables
 
-1. **`VMNAME`**  
-   - **Description:** Set the name of the Home Assistant VM.  
-   - **Default:** `Home Assistant`  
+1. **`VMNAME`**
+   - **Description:** Set the name of the Home Assistant VM.
+   - **Default:** `Home Assistant`
    - **Purpose:** This is the VM name that will be displayed in Unraid’s VM manager.
 
-2. **`VM Images Location`**  
-   - **Description:** Specify the location where the VM images are stored (e.g., your Domains share).  
-   - **Example:** `/mnt/user/domains/`  
+2. **`VM Images Location`**
+   - **Description:** Specify the location where the VM images are stored (e.g., your Domains share).
+   - **Example:** `/mnt/user/domains/`
    - **Purpose:** Defines the storage path for the Home Assistant VM files on your Unraid server.
 
-3. **`Appdata Location`**  
-   - **Description:** Set the path where HomeAssistant_inabox stores its appdata and configuration files.  
-   - **Default:** `/mnt/user/appdata/homeassistantinabox/`  
+3. **`Appdata Location`**
+   - **Description:** Set the path where HomeAssistant_inabox stores its appdata and configuration files.
+   - **Default:** `/mnt/user/appdata/homeassistantinabox/`
    - **Purpose:** Specifies where the container’s internal configuration and scripts are stored.
 
-4. **`Keep VM Running`**  
-   - **Description:** If set to `Yes`, the container will automatically monitor the Home Assistant VM and restart it if it’s not running.  
-   - **Default:** `Yes`  
+4. **`Keep VM Running`**
+   - **Description:** If set to `Yes`, the container will automatically monitor the Home Assistant VM and restart it if it’s not running.
+   - **Default:** `Yes`
    - **Purpose:** Ensures that Home Assistant remains available, even after unexpected shutdowns.
 
-5. **`Check Time`**  
-   - **Description:** Defines the frequency (in minutes) for checking the status of the Home Assistant VM.  
-   - **Default:** `15`  
+5. **`Check Time`**
+   - **Description:** Defines the frequency (in minutes) for checking the status of the Home Assistant VM.
+   - **Default:** `15`
    - **Purpose:** Determines how often the container checks to see if the VM is running and needs to be started.
 
-6. **`WEBUI_PORT`**  
-   - **Description:** Set the port for accessing the Home Assistant WebUI through the container’s WebUI redirect.  
-   - **Default:** `8123`  
+6. **`WEBUI_PORT`**
+   - **Description:** Set the port for accessing the Home Assistant WebUI through the container’s WebUI redirect.
+   - **Default:** `8123`
    - **Purpose:** Allows you to configure the WebUI access port for Home Assistant.
 
 ---
@@ -68,31 +68,32 @@ HomeAssistant_inabox relies on a few essential variables that need to be set thr
 
 HomeAssistant_inabox provides a robust solution by combining a Docker container with a full VM environment:
 
-1. **Direct Download & Installation**:  
-   - When the container is started, it automatically downloads the latest Home Assistant `.qcow2` disk image from the official Home Assistant source.  
+1. **Direct Download & Installation**:
+   - When the container is started, it automatically downloads the latest Home Assistant `.qcow2` disk image from the official Home Assistant source.
    - It then extracts and moves the image to your Unraid server’s specified domains location.
 
-2. **Dynamic VM Setup**:  
-   - The container dynamically builds a VM XML template for Home Assistant using the latest QEMU version available.  
+2. **Dynamic VM Setup**:
+   - The container dynamically builds a VM XML template for Home Assistant using the latest QEMU version available.
    - This template is then used to define a new VM on your Unraid server.
 
-3. **Automatic IP Detection**:  
-   - After the VM is started, the container uses the QEMU guest agent to retrieve the internal IP address of the VM.  
+3. **Automatic IP Detection**:
+   - After the VM is started, the container uses the QEMU guest agent to retrieve the internal IP address of the VM.
    - The IP address is then used to configure a redirect within the Docker container, making the “WebUI” link in Unraid’s Docker tab point directly to the Home Assistant WebUI inside the VM.
 
-4. **Monitoring & Restart Functionality**:  
-   - If `RESTART` is set to `Yes`, the container will regularly check to see if the Home Assistant VM is running.  
+4. **Monitoring & Restart Functionality**:
+   - If `RESTART` is set to `Yes`, the container will regularly check to see if the Home Assistant VM is running.
    - If the VM is found to be shut down or paused, the container will attempt to start it automatically.
+   - If the VM is running, but curl 8123 port not working, the container will attempt to restart it automatically.
 
-5. **WebUI Integration**:  
+5. **WebUI Integration**:
    - When you click the WebUI button for the HomeAssistant_inabox container, it dynamically redirects to the Home Assistant WebUI inside the VM using the IP address retrieved during the last check.
 
 ---
 
 ## Example Use Case
 
-1. **Scenario**: You want to run Home Assistant on your Unraid server, but you also want to manage it through the Docker interface rather than a separate VM management tab then having to use browser to login. 
-2. **Solution**: Install HomeAssistant_inabox and configure the necessary variables. With this setup, Home Assistant will run as a VM but be accessible directly from the Docker WebUI link.  
+1. **Scenario**: You want to run Home Assistant on your Unraid server, but you also want to manage it through the Docker interface rather than a separate VM management tab then having to use browser to login.
+2. **Solution**: Install HomeAssistant_inabox and configure the necessary variables. With this setup, Home Assistant will run as a VM but be accessible directly from the Docker WebUI link.
 3. **Result**: This simplifies your environment and provides a single point of access for Home Assistant, combining the convenience of Docker management with the power and flexibility of a dedicated VM.
 
 ---
